@@ -91,32 +91,49 @@ impl Tool for SidePanelTool {
 
         let snapshot = match params.action.as_str() {
             "status" => crate::side_panel::snapshot_for_session(&ctx.session_id)?,
-            "write" => crate::side_panel::write_markdown_page(
-                &ctx.session_id,
-                params
+            "write" => {
+                let page_id = params
                     .page_id
-                    .as_deref()
-                    .ok_or_else(|| anyhow::anyhow!("page_id is required for write"))?,
-                params.title.as_deref(),
-                params
-                    .content
-                    .as_deref()
-                    .ok_or_else(|| anyhow::anyhow!("content is required for write"))?,
-                focus,
-            )?,
-            "append" => crate::side_panel::append_markdown_page(
-                &ctx.session_id,
-                params
-                    .page_id
-                    .as_deref()
-                    .ok_or_else(|| anyhow::anyhow!("page_id is required for append"))?,
-                params.title.as_deref(),
-                params
-                    .content
-                    .as_deref()
-                    .ok_or_else(|| anyhow::anyhow!("content is required for append"))?,
-                focus,
-            )?,
+                    .clone()
+                    .unwrap_or_else(|| "notes".to_string());
+                crate::side_panel::write_markdown_page(
+                    &ctx.session_id,
+                    &page_id,
+                    params.title.as_deref(),
+                    params
+                        .content
+                        .as_deref()
+                        .ok_or_else(|| anyhow::anyhow!("content is required for write"))?,
+                    focus,
+                )?
+            }
+            "append" => {
+                let page_id = if let Some(id) = params.page_id.clone() {
+                    id
+                } else {
+                    // Fall back to the most recently updated page
+                    let snapshot = crate::side_panel::snapshot_for_session(&ctx.session_id)?;
+                    snapshot
+                        .pages
+                        .first()
+                        .map(|page| page.id.clone())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "page_id is required for append when no pages exist"
+                            )
+                        })?
+                };
+                crate::side_panel::append_markdown_page(
+                    &ctx.session_id,
+                    &page_id,
+                    params.title.as_deref(),
+                    params
+                        .content
+                        .as_deref()
+                        .ok_or_else(|| anyhow::anyhow!("content is required for append"))?,
+                    focus,
+                )?
+            }
             "load" => {
                 let file_path = params
                     .file_path
@@ -140,20 +157,40 @@ impl Tool for SidePanelTool {
                     focus,
                 )?
             }
-            "focus" => crate::side_panel::focus_page(
-                &ctx.session_id,
-                params
-                    .page_id
-                    .as_deref()
-                    .ok_or_else(|| anyhow::anyhow!("page_id is required for focus"))?,
-            )?,
-            "delete" => crate::side_panel::delete_page(
-                &ctx.session_id,
-                params
-                    .page_id
-                    .as_deref()
-                    .ok_or_else(|| anyhow::anyhow!("page_id is required for delete"))?,
-            )?,
+            "focus" => {
+                let page_id = if let Some(id) = params.page_id.clone() {
+                    id
+                } else {
+                    // Fall back to the currently focused page
+                    let snapshot = crate::side_panel::snapshot_for_session(&ctx.session_id)?;
+                    snapshot
+                        .focused_page_id
+                        .clone()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "page_id is required for focus when no page is focused"
+                            )
+                        })?
+                };
+                crate::side_panel::focus_page(&ctx.session_id, &page_id)?
+            }
+            "delete" => {
+                let page_id = if let Some(id) = params.page_id.clone() {
+                    id
+                } else {
+                    // Fall back to the currently focused page
+                    let snapshot = crate::side_panel::snapshot_for_session(&ctx.session_id)?;
+                    snapshot
+                        .focused_page_id
+                        .clone()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "page_id is required for delete when no page is focused"
+                            )
+                        })?
+                };
+                crate::side_panel::delete_page(&ctx.session_id, &page_id)?
+            }
             other => anyhow::bail!("unknown side_panel action: {}", other),
         };
 
