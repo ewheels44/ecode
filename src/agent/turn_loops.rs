@@ -15,6 +15,12 @@ impl Agent {
         let mut context_limit_retries = 0u32;
         let mut incomplete_continuations = 0u32;
 
+        // AUTO-ENRICH: Call Mimir enrich_task ONCE per user request (not per tool-call round-trip).
+        // Computing this inside the loop caused N+1 Python subprocess spawns and 303MB payloads.
+        // Cache the result so tool-call round-trips reuse it without re-spawning Python.
+        crate::logging::info("ENRICH_FIX_V2: Computing enrich context ONCE before loop");
+        let cached_enrich_context = self.auto_enrich_task().await;
+
         loop {
             let repaired = self.repair_missing_tool_outputs();
             if repaired > 0 {
@@ -28,34 +34,35 @@ impl Agent {
                 // Reset cache tracker and tool lock on compaction since the message history changes
                 self.cache_tracker.reset();
                 self.locked_tools = None;
-                if print_output {
-                    let tokens_str = event
+                logging::info(&format!(
+                    "Context compacted ({}{})",
+                    event.trigger,
+                    event
                         .pre_tokens
-                        .map(|t| format!(" ({} tokens)", t))
-                        .unwrap_or_default();
-                    println!("📦 Context compacted ({}){}", event.trigger, tokens_str);
-                }
+                        .map(|t| format!(" {} tokens", t))
+                        .unwrap_or_default()
+                ));
             }
 
             let tools = self.tool_definitions().await;
             let messages: std::sync::Arc<[Message]> = messages.into();
             // Non-blocking memory: uses pending result from last turn, spawns check for next turn
-            let memory_pending =
-                self.build_memory_prompt_nonblocking_shared(std::sync::Arc::clone(&messages), None);
+            let memory_pending = self.build_memory_prompt_nonblocking_shared(
+                std::sync::Arc::clone(&messages),
+                None,
+            );
             // Use split prompt for better caching - static content cached, dynamic not
             let (split_prompt, context_info) = self.build_system_prompt_split(None);
 
-            // AUTO-ENRICH: Call Mimir enrich_task at application layer (non-negotiable)
-            // This ensures Mimir context is injected BEFORE the model processes the turn
-            let enrich_context = self.auto_enrich_task().await;
-            let split_prompt = if let Some(context) = enrich_context {
+            // Inject cached enrich context (computed once before the loop)
+            let split_prompt = if let Some(ref context) = cached_enrich_context {
                 // Inject Mimir context as a system reminder in the dynamic part
                 let mut enriched = split_prompt;
                 if !enriched.dynamic_part.is_empty() {
                     enriched.dynamic_part.push_str("\n\n");
                 }
                 enriched.dynamic_part.push_str("# Mimir Project Context\n\n");
-                enriched.dynamic_part.push_str(&context);
+                enriched.dynamic_part.push_str(context);
                 enriched
             } else {
                 split_prompt
