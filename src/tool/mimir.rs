@@ -133,6 +133,7 @@ impl Tool for MimirTool {
                         "rag_workflow",
                         "knowledge_agent",
                         "reindex",
+                        "init",
                         "remove_file",
                         "stats",
                         "task_health",
@@ -202,7 +203,7 @@ impl Tool for MimirTool {
                     "Mimir not configured in this workspace.\n\n\
                      To set up Mimir:\n\
                      1. Clone Mimir: git clone <mimir-repo> ~/Documents/Mimir\n\
-                     2. In your project: python ~/Documents/Mimir/mimir.py init\n\
+                     2. In your project: python ~/Documents/Mimir/mimir_bridge.py init\n\
                      3. This creates .mimir/config.json and sets up the knowledge base.",
                 )
                 .with_title("Mimir: Not configured"));
@@ -380,6 +381,7 @@ fn format_mimir_response(action: &str, response: &Value) -> String {
         "query" => format_query(response),
         "rag_workflow" | "knowledge_agent" => format_agent_response(response),
         "reindex" => format_simple(response, "Reindex"),
+        "init" => format_simple(response, "Init"),
         "remove_file" => format_simple(response, "Remove file"),
         "stats" => format_stats(response),
         "task_health" => format_health(response),
@@ -601,7 +603,8 @@ mod tests {
         assert!(actions.iter().any(|a| a == "enrich_task"));
         assert!(actions.iter().any(|a| a == "search"));
         assert!(actions.iter().any(|a| a == "sdk_cache_get"));
-        assert_eq!(actions.len(), 14);
+        assert!(actions.iter().any(|a| a == "init"));
+        assert_eq!(actions.len(), 15);
     }
 
     #[test]
