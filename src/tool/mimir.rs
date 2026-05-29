@@ -116,7 +116,7 @@ impl Tool for MimirTool {
     }
 
     fn description(&self) -> &str {
-        "Query the Mimir project knowledge base. Use enrich_task before coding tasks to get project context. Use search for semantic code search. Use sdk_cache_get for library documentation."
+        "Query the Mimir project knowledge base. Use search for semantic code search. Use sdk_cache_get for library documentation."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -127,7 +127,6 @@ impl Tool for MimirTool {
                 "action": {
                     "type": "string",
                     "enum": [
-                        "enrich_task",
                         "search",
                         "query",
                         "rag_workflow",
@@ -149,10 +148,6 @@ impl Tool for MimirTool {
                     "type": "object",
                     "description": "Action-specific parameters.",
                     "properties": {
-                        "task": {
-                            "type": "string",
-                            "description": "Task description for enrich_task."
-                        },
                         "query": {
                             "type": "string",
                             "description": "Search/query text."
@@ -376,7 +371,6 @@ fn format_mimir_response(action: &str, response: &Value) -> String {
     }
 
     match action {
-        "enrich_task" => format_enrich_task(response),
         "search" => format_search(response),
         "query" => format_query(response),
         "rag_workflow" | "knowledge_agent" => format_agent_response(response),
@@ -404,34 +398,6 @@ fn format_mimir_response(action: &str, response: &Value) -> String {
             }
             serde_json::to_string_pretty(response).unwrap_or_else(|_| response.to_string())
         }
-    }
-}
-
-fn format_enrich_task(response: &Value) -> String {
-    let status = response.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
-    let context = response.get("context").and_then(|c| c.as_str()).unwrap_or("");
-    let routed_to = response.get("routed_to").and_then(|r| r.as_str()).unwrap_or("");
-    let elapsed = response.get("elapsed_ms").and_then(|e| e.as_u64()).unwrap_or(0);
-    let cache_hit = response.get("cache_hit").and_then(|c| c.as_bool()).unwrap_or(false);
-
-    match status {
-        "ok" => {
-            let mut output = String::new();
-            if !routed_to.is_empty() {
-                output.push_str(&format!("[Mimir: routed to {} ({}ms)", routed_to, elapsed));
-                if cache_hit {
-                    output.push_str(", cache hit");
-                }
-                output.push_str("]\n\n");
-            }
-            output.push_str(context);
-            output
-        }
-        "no_results" => {
-            let suggestion = response.get("suggestion").and_then(|s| s.as_str()).unwrap_or("");
-            format!("No project context found for this task.\n{}", suggestion)
-        }
-        _ => context.to_string(),
     }
 }
 
@@ -600,25 +566,10 @@ mod tests {
         let actions = schema["properties"]["action"]["enum"]
             .as_array()
             .unwrap();
-        assert!(actions.iter().any(|a| a == "enrich_task"));
         assert!(actions.iter().any(|a| a == "search"));
         assert!(actions.iter().any(|a| a == "sdk_cache_get"));
         assert!(actions.iter().any(|a| a == "init"));
-        assert_eq!(actions.len(), 15);
-    }
-
-    #[test]
-    fn test_format_enrich_task_ok() {
-        let response = json!({
-            "status": "ok",
-            "context": "Auth module uses JWT tokens.",
-            "routed_to": "vector",
-            "elapsed_ms": 150,
-            "cache_hit": false
-        });
-        let formatted = format_enrich_task(&response);
-        assert!(formatted.contains("Auth module uses JWT tokens"));
-        assert!(formatted.contains("vector"));
+        assert_eq!(actions.len(), 14);
     }
 
     #[test]
